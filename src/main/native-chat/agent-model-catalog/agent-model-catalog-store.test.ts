@@ -24,6 +24,70 @@ function success(...ids: string[]): AgentModelCatalogSuccess {
 }
 
 describe('agent model catalog store', () => {
+  it('retains unobserved Antigravity efforts across a restart without crossing account catalogs', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'agent-model-catalog-'))
+    const store = new AgentModelCatalogStore()
+    await store.attachPersistence(createAgentModelCatalogFilePersistence(directory))
+    store.recordSuccess(
+      'account-a',
+      'antigravity',
+      {
+        origin: 'live-session',
+        models: [
+          {
+            id: 'gemini-4-hydrogen',
+            label: 'Hydrogen',
+            isDefault: false,
+            efforts: [
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+              { value: 'xhigh', label: 'Extra' }
+            ]
+          }
+        ]
+      },
+      'live'
+    )
+    const unobserved: AgentModelCatalogSuccess = {
+      origin: 'live-session',
+      models: [
+        {
+          id: 'gemini-4-hydrogen',
+          label: 'Hydrogen',
+          isDefault: false,
+          efforts: [],
+          effortsKnown: false
+        }
+      ]
+    }
+    store.recordSuccess('account-a', 'antigravity', unobserved, 'live')
+    store.recordSuccess('account-b', 'antigravity', unobserved, 'live')
+    await store.flushPersistence()
+    const restarted = new AgentModelCatalogStore()
+    await restarted.attachPersistence(createAgentModelCatalogFilePersistence(directory))
+    expect(restarted.get('account-a')?.models[0]?.efforts.map(({ value }) => value)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh'
+    ])
+    expect(restarted.get('account-b')?.models[0]).toMatchObject({
+      efforts: [],
+      effortsKnown: false
+    })
+    restarted.recordSuccess(
+      'account-a',
+      'antigravity',
+      {
+        ...unobserved,
+        models: [{ id: 'gemini-4-hydrogen', label: 'Hydrogen', isDefault: false, efforts: [] }]
+      },
+      'live'
+    )
+    expect(restarted.get('account-a')?.models[0]?.efforts).toEqual([])
+  })
+
   it('invalidates changed inputs only, retaining rows and incomplete evidence until rediscovery', async () => {
     let now = 0
     const store = new AgentModelCatalogStore({ now: () => now })

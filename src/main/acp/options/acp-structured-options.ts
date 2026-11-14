@@ -1,4 +1,5 @@
 import { acpSelectChoices } from './acp-select-choices'
+import { acpModelEffortMenu } from './acp-model-effort-menu'
 import { acpInitializeForkSupport } from '../capabilities/acp-fork-support'
 import type {
   AgentSessionModelOption,
@@ -37,6 +38,7 @@ export class AcpStructuredOptions {
     private readonly dialect: Pick<
       AcpDialect,
       | 'modelEfforts'
+      | 'groupedModelEfforts'
       | 'withheldCommands'
       | 'effortChangesModel'
       | 'clampsUnlistedEffort'
@@ -255,28 +257,19 @@ export class AcpStructuredOptions {
           label: model.name,
           ...(model.description ? { description: model.description } : {})
         })) ?? [])
-    const models: AgentSessionModelOption[] = listed.map((model) => {
-      const info = this.models?.availableModels.find((entry) => entry.modelId === model.id)
-      const advertised = info ? this.dialect.modelEfforts?.(info) : undefined
-      // A current-session menu supplies no negative evidence about an unobserved model.
-      const sessionMenu =
-        model.id === currentModel
-          ? { efforts: sessionEfforts }
-          : (modelOption || effortOption) && !advertised
-            ? { efforts: [], effortsKnown: false as const }
-            : { efforts: [] }
-      return {
-        ...model,
-        isDefault: false,
-        // Fall back to the running session's menu when the advertised menu is empty.
-        ...(advertised && (advertised.efforts.length > 0 || model.id !== currentModel)
-          ? advertised
-          : sessionMenu),
-        ...(advertised?.declaredDefaultEffort !== undefined
-          ? { declaredDefaultEffort: advertised.declaredDefaultEffort }
-          : {})
-      }
-    })
+    const models: AgentSessionModelOption[] = listed.map((model) => ({
+      ...model,
+      isDefault: false,
+      ...acpModelEffortMenu({
+        dialect: this.dialect,
+        modelId: model.id,
+        availableModels: this.models?.availableModels ?? [],
+        currentModel,
+        sessionEfforts,
+        hasEffortMenu: Boolean(effortOption),
+        hasSessionMenus: Boolean(modelOption || effortOption)
+      })
+    }))
     const confirmed = [...(currentModel ? ['model'] : []), ...(effortOption ? ['effort'] : [])]
     return {
       models,

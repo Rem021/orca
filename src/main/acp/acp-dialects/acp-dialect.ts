@@ -33,6 +33,13 @@ export type AcpRequestPresentation = {
 
 export type AcpRequestSettlement = { reply: unknown; plan?: string }
 
+type AcpModelEfforts = {
+  efforts: AgentSessionOptionChoice[]
+  effortsKnown?: false
+  defaultEffort?: string
+  declaredDefaultEffort?: string | null
+}
+
 export type AcpBackgroundTaskUpdate = Pick<NativeChatBackgroundTaskBlock, 'taskId' | 'state'> &
   Partial<Omit<NativeChatBackgroundTaskBlock, 'type' | 'taskId' | 'state'>> & {
     fallbackLabel?: string
@@ -151,11 +158,13 @@ export type AcpDialect = {
     params: unknown
   ): { sessionId: string; promptId: string; stopReason: string } | undefined
   contextWindow?(models: unknown): number | undefined
-  modelEfforts?(model: ModelInfo): {
-    efforts: AgentSessionOptionChoice[]
-    defaultEffort?: string
-    declaredDefaultEffort?: string | null
-  }
+  modelEfforts?(model: ModelInfo): AcpModelEfforts
+  /** Grouped config choices may advertise efforts as separate model variants. */
+  groupedModelEfforts?(
+    modelId: string,
+    availableModels: readonly ModelInfo[],
+    currentEfforts?: readonly AgentSessionOptionChoice[]
+  ): AcpModelEfforts
   /** Native thinking choices remain valid across models; the agent clamps unsupported levels. */
   clampsUnlistedEffort?: true
   /** Opt-in because advertising forms changes agent behaviour; requests use the generic handlers. */
