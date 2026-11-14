@@ -14,6 +14,7 @@ import { createSttSessionState, sttEngineUsers, type SttSessionState } from './s
 import {
   prepareSttModelForDeletion,
   scheduleSttIdleTeardown,
+  shutdownSttService,
   stopSttDictation,
   teardownIdleSttEngine
 } from './stt-session-stop'
@@ -156,5 +157,9 @@ export class SttService {
       return teardownIdleSttEngine(this.state)
     }
     return new Promise((resolve) => engine.onUnloaded.push(resolve))
+  }
+
+  shutdown(): Promise<void> {
+    return shutdownSttService(this.state)
   }
 }

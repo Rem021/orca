@@ -147,7 +147,13 @@ export function registerCoreHandlers(
       : {}),
     onBeforeRelaunch: lifecycleOptions.onBeforeRelaunch,
     // Restart/profile switching closes this through will-quit; this callback covers relaunch exit.
-    onBeforeRelaunchExit: () => closeNotificationDismissalsBeforeRelaunch(runtime)
+    onBeforeRelaunchExit: async () => {
+      const { findSpeechSttService } = await import('../../speech/speech-runtime-service')
+      await Promise.allSettled([
+        closeNotificationDismissalsBeforeRelaunch(runtime),
+        findSpeechSttService()?.shutdown()
+      ])
+    }
   })
   registerCliHandlers()
   registerPreflightHandlers(store)

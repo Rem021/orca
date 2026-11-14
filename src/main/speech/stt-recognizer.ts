@@ -33,4 +33,6 @@ export type SttRecognizer = {
   discard(streamId: string): void
   /** Called on a cancel's arrival, ahead of the queue: skip the stream's remaining chunks; the running decode finishes. */
   cancel(streamId: string): void
+  /** Frees native sessions and models before process exit so GPU residency sets are empty at static teardown. */
+  dispose(): void
 }

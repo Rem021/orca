@@ -12,6 +12,7 @@ export type FakeTranscribeEngine = {
   speechProbability: (frame: Float32Array) => number
   /** Text of one decode of this audio. */
   transcribe: (pcm: Float32Array) => string | Promise<string>
+  onDispose?: (resource: string) => void
 }
 
 class OutputTruncated extends Error {
@@ -21,7 +22,8 @@ class OutputTruncated extends Error {
 /** A Silero VAD stream scoring each frame with `speechProbability`. */
 export function fakeVadSession(
   frameSamples: number,
-  speechProbability: (frame: Float32Array) => number
+  speechProbability: (frame: Float32Array) => number,
+  onDispose?: () => void
 ): VadStream & { dispose: () => void } {
   let pending: number[] = []
   let frames = 0
@@ -46,21 +48,25 @@ export function fakeVadSession(
       return score(false)
     },
     streamFlush: async () => score(true),
-    dispose: () => {}
+    dispose: () => onDispose?.()
   }
 }
 
-function fakeModel(engine: FakeTranscribeEngine) {
+function fakeModel(engine: FakeTranscribeEngine, path: string) {
   const languages: string[] = []
   return {
     capabilities: { nativeSampleRate: engine.sampleRate, languages },
     vadInfo: { sampleRate: engine.sampleRate, frameSamples: engine.vadFrameSamples },
     supports: () => false,
     createSession: () => ({
-      run: async (pcm: Float32Array) => ({ text: await engine.transcribe(pcm) })
+      run: async (pcm: Float32Array) => ({ text: await engine.transcribe(pcm) }),
+      dispose: () => engine.onDispose?.('asr-session')
     }),
-    createVadSession: () => fakeVadSession(engine.vadFrameSamples, engine.speechProbability),
-    dispose: () => {}
+    createVadSession: () =>
+      fakeVadSession(engine.vadFrameSamples, engine.speechProbability, () =>
+        engine.onDispose?.('vad-session')
+      ),
+    dispose: () => engine.onDispose?.(`model:${path}`)
   }
 }
 
@@ -83,7 +89,7 @@ export function installFakeTranscribeCpp(engine: FakeTranscribeEngine): {
     OutputTruncated,
     TranscribeModel: {
       // One model serves both roles: speech decodes and the Silero VAD.
-      load: async () => fakeModel(engine)
+      load: async (path: string) => fakeModel(engine, path)
     }
   })
   writeFileSync(join(speechModulesDir, 'transcribe-cpp', 'package.json'), '{"type":"module"}\n')

@@ -43,6 +43,7 @@ import { getCanonicalUserDataPath } from '../../persistence/loading-store/user-d
 import { flushUnsavedCloudSessions } from '../../orca-profiles/cloud-session/profile-cloud-session-owner'
 import { getWorkspaceCleanupRunner } from '../../workspaces/cleanup/workspace-cleanup-runner-registry'
 import { closeBrowserExtensionProfileDocumentStores } from '../../browser/extensions/profile-storage/browser-extension-profile-document-store'
+import { findSpeechSttService } from '../../speech/speech-runtime-service'
 
 // First will-quit pass awaits teardown; the re-fired pass must exit without starting writes again.
 let daemonDisconnectDone = false
@@ -222,6 +223,7 @@ function installWillQuitHandler(): void {
     browserManager.setOffscreenTabOpener(null)
     const emulatorShutdown =
       state.runtime?.getEmulatorBridge()?.destroyAllSessions() ?? Promise.resolve()
+    const speechShutdown = findSpeechSttService()?.shutdown() ?? Promise.resolve()
     const finalStore = state.store
     const beginSshShutdownAndFinalSave = (removalStopped: boolean) => {
       // Mark SSH leases detached synchronously immediately before final flush; no await may separate mutation from save.
@@ -295,6 +297,7 @@ function installWillQuitHandler(): void {
       { name: 'runtime-rpc', promise: rpcStopAndClear },
       { name: 'watchers', promise: watcherShutdown },
       { name: 'emulator', promise: emulatorShutdown },
+      { name: 'speech', promise: speechShutdown },
       { name: 'browser-client-hosts', promise: browserClientHostShutdown },
       { name: 'local-ssh-browser-routes', promise: localSshRouteShutdown },
       { name: 'ssh', promise: sshShutdown },
