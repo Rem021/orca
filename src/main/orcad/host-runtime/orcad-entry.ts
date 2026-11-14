@@ -124,6 +124,10 @@ async function activateOrcadRuntime(
   registerCleanup(() => uninstallObservedStatusIdentity())
   registerCleanup(profileShutdown.finalize)
   registerCleanup(stopOrcadStructuredAgentSessions)
+  registerCleanup(async () => {
+    const { findSpeechSttService } = await import('../../speech/speech-runtime-service')
+    await findSpeechSttService()?.shutdown()
+  })
   registerCleanup(() => disposeWatcherProcessAndWait())
   const { startOrcadDesktopPushService } = await import('./orcad-desktop-push')
 

@@ -45,12 +45,15 @@ afterEach(() => {
   decode = sentence
 })
 
-async function start(): Promise<{ recognizer: SttRecognizer; posted: SttRecognizerEvent[] }> {
+async function start(
+  onDispose?: (resource: string) => void
+): Promise<{ recognizer: SttRecognizer; posted: SttRecognizerEvent[] }> {
   const fake = installFakeTranscribeCpp({
     sampleRate: RATE,
     vadFrameSamples: 10,
     speechProbability: (frame) => (frame.some((sample) => Math.round(sample) !== 0) ? 0.9 : 0),
-    transcribe: (pcm) => decode(pcm)
+    transcribe: (pcm) => decode(pcm),
+    onDispose
   })
   dispose = fake.dispose
   const posted: SttRecognizerEvent[] = []
@@ -186,5 +189,19 @@ describe('createTranscribeCppRecognizer', () => {
     recognizer.discard('s')
 
     expect(transcript(posted)).toEqual(testCase.expected)
+  })
+
+  it('disposes open VAD streams and sessions before freeing native models', async () => {
+    const disposed: string[] = []
+    const { recognizer } = await start((resource) => disposed.push(resource))
+
+    recognizer.dispose()
+
+    expect(disposed).toEqual([
+      'vad-session',
+      'asr-session',
+      'model:/models/silero-vad.gguf',
+      'model:/models/parakeet/model.gguf'
+    ])
   })
 })

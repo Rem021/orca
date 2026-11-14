@@ -16,6 +16,10 @@ export type SttWorkerRequest =
   | { type: 'stop'; streamId: string }
   | { type: 'discard'; streamId: string }
   | { type: 'attach-audio'; streamId: string }
+  | { type: 'shutdown' }
+
+// Lets an idle worker free Metal residency sets via process.exit before falling back to a signal kill.
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 500
 
 export type SttWorkerProcess = Omit<WorkerRequestTransport, 'unref'> & {
   /** False when the process can't take a port (orcad's forked child), so audio stays on IPC. */
@@ -26,6 +30,7 @@ export type SpawnSttWorkerProcess = () => SttWorkerProcess
 /** Session code drops its listeners with removeAllListeners; this keeps the child's own intact. */
 export class SttWorkerChildProcess extends EventEmitter implements SttWorkerProcess {
   private exited = false
+  private killTimer: ReturnType<typeof setTimeout> | null = null
   private readonly exit = Promise.withResolvers<number>()
 
   constructor(
@@ -54,8 +59,19 @@ export class SttWorkerChildProcess extends EventEmitter implements SttWorkerProc
 
   /** Kills even a decode stuck in native code; resolves once the process is gone. */
   terminate(): Promise<number> {
-    if (!this.exited) {
-      this.child.kill()
+    if (!this.exited && !this.killTimer) {
+      try {
+        this.child.send({ type: 'shutdown' })
+        this.killTimer = setTimeout(() => {
+          this.killTimer = null
+          if (!this.exited) {
+            this.child.kill()
+          }
+        }, GRACEFUL_SHUTDOWN_TIMEOUT_MS)
+        this.killTimer.unref?.()
+      } catch {
+        this.child.kill()
+      }
     }
     return this.exit.promise
   }
@@ -69,6 +85,10 @@ export class SttWorkerChildProcess extends EventEmitter implements SttWorkerProc
       return
     }
     this.exited = true
+    if (this.killTimer) {
+      clearTimeout(this.killTimer)
+      this.killTimer = null
+    }
     this.emit('exit', code ?? 1)
     this.exit.resolve(code ?? 1)
   }

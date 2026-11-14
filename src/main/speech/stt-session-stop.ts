@@ -270,3 +270,17 @@ export async function teardownSttEngine(state: SttSessionState, engine: SttEngin
   await engine.worker.terminate()
   notifyUnloaded(engine)
 }
+
+/** Stops active dictations and unloads any live recognizer so the speech child exits cleanly on host quit. */
+export async function shutdownSttService(state: SttSessionState): Promise<void> {
+  state.prewarmGeneration += 1
+  clearSttIdleTeardownTimer(state)
+  for (const session of state.sessions.values()) {
+    session.cloud?.cancel()
+  }
+  state.sessions.clear()
+  const engine = state.engine
+  if (engine) {
+    await teardownSttEngine(state, engine)
+  }
+}

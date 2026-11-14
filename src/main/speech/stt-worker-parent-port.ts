@@ -14,7 +14,7 @@ export type SttWorkerParentPort = {
 }
 
 /** Electron's utility process (desktop) or a forked child (orcad). */
-export function connectSttWorkerParentPort(): SttWorkerParentPort {
+export function connectSttWorkerParentPort(onDisconnect?: () => void): SttWorkerParentPort {
   // Electron types it as always set, but only a utility process has one.
   const utilityPort: UtilityParentPort | undefined = process.parentPort
   if (utilityPort) {
@@ -28,7 +28,13 @@ export function connectSttWorkerParentPort(): SttWorkerParentPort {
     throw new Error('The speech worker must run as a child process')
   }
   // The host died without killing us; don't keep a recognizer loaded for nobody.
-  process.on('disconnect', () => process.exit(0))
+  process.on('disconnect', () => {
+    if (onDisconnect) {
+      onDisconnect()
+    } else {
+      process.exit(0)
+    }
+  })
   return {
     post: (message) => process.send?.(message),
     onMessage: (listener) => process.on('message', (message) => listener(message, []))

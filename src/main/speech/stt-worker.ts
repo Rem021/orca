@@ -13,8 +13,10 @@ type AudioPortInput = {
   ending: boolean
 }
 
-const parentPort = connectSttWorkerParentPort()
+const parentPort = connectSttWorkerParentPort(() => beginShutdown())
 let recognizer: SttRecognizer | null = null
+let shuttingDown = false
+const activeStreams = new Set<string>()
 const audioPorts = new Map<string, AudioPortInput>()
 // Canceled streams whose queued work is skipped instead of decoded; cleared when their discard runs.
 const discarded = new Set<string>()
@@ -107,6 +109,7 @@ async function handleStop(streamId: string): Promise<void> {
   } catch (err) {
     parentPort.post({ type: 'error', streamId, error: String(err) })
   } finally {
+    activeStreams.delete(streamId)
     parentPort.post({ type: 'stopped', streamId })
   }
 }
@@ -123,13 +126,38 @@ function cancelStream(streamId: string): void {
 
 // Runs in queue order, after everything queued for the stream before the cancel; the host waits for it.
 function handleDiscard(streamId: string): void {
+  activeStreams.delete(streamId)
   discarded.delete(streamId)
   recognizer?.discard(streamId)
   parentPort.post({ type: 'discarded', streamId })
 }
 
+function beginShutdown(): void {
+  if (shuttingDown) {
+    return
+  }
+  shuttingDown = true
+  for (const streamId of activeStreams) {
+    discarded.add(streamId)
+    recognizer?.cancel(streamId)
+  }
+  activeStreams.clear()
+  for (const input of audioPorts.values()) {
+    input.port.close()
+  }
+  audioPorts.clear()
+  enqueue(async () => {
+    const current = recognizer
+    recognizer = null
+    current?.dispose()
+    await Promise.resolve()
+    await Promise.resolve()
+    process.exit(0)
+  })
+}
+
 function handleMessage(
-  msg: SttWorkerRequest,
+  msg: Exclude<SttWorkerRequest, { type: 'shutdown' }>,
   ports: readonly MessagePortMain[]
 ): void | Promise<void> {
   switch (msg.type) {
@@ -151,6 +179,17 @@ function handleMessage(
 parentPort.onMessage((message, ports) => {
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: only the session host posts here, and it sends SttWorkerRequest.
   const msg = message as SttWorkerRequest
+  if (msg.type === 'shutdown') {
+    beginShutdown()
+    return
+  }
+  if (shuttingDown) {
+    ports[0]?.close()
+    return
+  }
+  if (msg.type === 'open' || msg.type === 'feed' || msg.type === 'attach-audio') {
+    activeStreams.add(msg.streamId)
+  }
   if (msg.type === 'discard') {
     cancelStream(msg.streamId)
   }
